@@ -80,6 +80,17 @@ export const CT_PRESETS: Preset[] = [
     mode: 'mip',
     colormap: 'grayscale',
   },
+  {
+    id: 'mediastinum',
+    label: 'Mediastinum',
+    hint: 'W 350 / L 50 · heart, great vessels',
+    windowCenter: 50,
+    windowWidth: 350,
+    threshold: [20, 400],
+    opacity: 0.3,
+    mode: 'dvr',
+    colormap: 'flesh',
+  },
 ]
 
 export const DEFAULT_PRESET_BY_DATASET: Record<string, string> = {

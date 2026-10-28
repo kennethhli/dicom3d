@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Bone, Brain, Droplets, HeartPulse, Layers, RotateCcw, ScanLine, Wind } from 'lucide-react'
+import { Bone, Brain, Droplets, Heart, HeartPulse, Layers, RotateCcw, ScanLine, Wind } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -19,6 +19,7 @@ const PRESET_ICONS: Record<string, typeof Bone> = {
   angio: Droplets,
   brain: Brain,
   mip: ScanLine,
+  mediastinum: Heart,
 }
 
 const MODES: { id: RenderMode; label: string; tip: string }[] = [

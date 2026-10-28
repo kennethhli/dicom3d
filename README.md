@@ -25,7 +25,7 @@ DICOM3D takes a stack of 2D DICOM slices and de-identifies them on a FastAPI bac
   - Clip-box intersection: cutting into the volume also makes rendering faster.
   - **Adaptive rendering for weak GPUs.** Frames are drawn only when something changes. While you drag the camera or a slider, the viewer renders with fewer ray steps at a reduced resolution, which a controller tunes to a ~19 ms frame budget (down to 30%). About 220 ms after the last change, it draws one full-resolution, full-step frame and then goes idle. Turn off *Adaptive resolution* to render every frame at full quality for benchmarking.
 - **Clinical controls.**
-  - Presets: Bone, Soft Tissue, Lung, Angio, Brain, MIP. Keys `1`–`6` select them.
+  - Presets: Bone, Soft Tissue, Lung, Angio, Brain, MIP, Mediastinum. Keys `1`–`7` select them.
   - Window center/width with a live histogram, HU threshold range, opacity, brightness, and colormaps.
   - X/Y/Z clipping range sliders.
   - Camera views A/P/L/R/S/I, which are also keyboard shortcuts.
