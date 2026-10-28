@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import os
+import threading
+from contextlib import asynccontextmanager
 from collections import Counter
 from dataclasses import asdict
 from functools import lru_cache
@@ -29,7 +31,24 @@ CORS_ORIGINS = [o for o in os.environ.get("DICOM3D_CORS_ORIGINS", "*").split(","
 
 store = SampleStore(DATA_DIR / "samples")
 
+
+def _warm_samples() -> None:
+    for spec in store.specs():
+        try:
+            store.get(spec.id)
+        except Exception:  # warming is best-effort; requests will retry generation
+            pass
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    if os.environ.get("DICOM3D_WARM_SAMPLES", "1") == "1":
+        threading.Thread(target=_warm_samples, name="warm-samples", daemon=True).start()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="DICOM3D API",
     version="1.0.0",
     description="Serves de-identified DICOM series for browser-side volumetric rendering.",

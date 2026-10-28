@@ -23,21 +23,21 @@ export function PerfMonitor({ stats, uploadMs }: { stats: PerfStats | null; uplo
   const points = history.map((v, i) => `${(i / (HISTORY - 1)) * 100},${28 - (v / max) * 26}`).join(' ')
 
   return (
-    <div className="pointer-events-none w-44 rounded-lg border border-white/10 bg-black/55 p-2.5 font-mono text-[11px] text-white/70 shadow-lg backdrop-blur-md">
+    <div className="pointer-events-none w-28 rounded-lg sm:w-44 border border-white/10 bg-black/55 p-2.5 font-mono text-[11px] text-white/70 shadow-lg backdrop-blur-md">
       <div className="flex items-baseline justify-between">
-        <span className="text-[10px] tracking-widest text-white/45 uppercase">Performance</span>
+        <span className="text-[10px] tracking-widest text-white/45 uppercase">Perf</span>
         <span className={cn('text-lg leading-none font-semibold tabular-nums', fpsTone(stats.fps))}>
           {stats.fps.toFixed(0)}
           <span className="ml-0.5 text-[10px] font-normal text-white/50">fps</span>
         </span>
       </div>
-      <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="mt-1.5 h-7 w-full" aria-hidden>
+      <svg viewBox="0 0 100 28" preserveAspectRatio="none" className="mt-1.5 hidden h-7 w-full sm:block" aria-hidden>
         <line x1="0" x2="100" y1={28 - (60 / max) * 26} y2={28 - (60 / max) * 26} stroke="currentColor" strokeOpacity="0.15" strokeDasharray="2 2" />
         {history.length > 1 && (
           <polyline points={points} fill="none" stroke="rgb(95 212 255)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
         )}
       </svg>
-      <dl className="mt-1.5 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 tabular-nums">
+      <dl className="mt-1.5 hidden grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 tabular-nums sm:grid">
         <dt>Frame</dt>
         <dd className="text-right text-white/90">{stats.frameMs.toFixed(1)} ms</dd>
         <dt>GPU</dt>

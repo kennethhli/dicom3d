@@ -135,12 +135,11 @@ export class VolumeRenderer {
     }
 
     this.texture?.dispose()
-    const texture = new THREE.Data3DTexture(volume.data, nx, ny, nz)
+    const texture = new THREE.Data3DTexture(volume.gpuData, nx, ny, nz)
     texture.format = THREE.RedFormat
-    texture.type = THREE.FloatType
-    const linear = this.renderer.extensions.has('OES_texture_float_linear')
-    texture.minFilter = linear ? THREE.LinearFilter : THREE.NearestFilter
-    texture.magFilter = linear ? THREE.LinearFilter : THREE.NearestFilter
+    texture.type = THREE.HalfFloatType
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
     texture.wrapS = texture.wrapT = texture.wrapR = THREE.ClampToEdgeWrapping
     texture.unpackAlignment = 1
     texture.needsUpdate = true

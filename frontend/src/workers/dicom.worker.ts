@@ -35,6 +35,7 @@ ctx.onmessage = (event: MessageEvent<WorkerRequest>) => {
     const volume = assembleVolume(req.slices, req.skipped)
     post({ id: req.id, type: 'volume', volume, elapsedMs: performance.now() - t0 }, [
       volume.data.buffer,
+      volume.gpuData.buffer,
       volume.histogram.buffer,
     ])
   } catch (err) {

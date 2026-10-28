@@ -11,7 +11,7 @@ import numpy as np
 from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian, PYDICOM_IMPLEMENTATION_UID, generate_uid
 
-from .phantoms import PHANTOMS, PhantomSpec
+from .phantoms import PHANTOMS, PhantomSpec, render_slices
 
 HU_INTERCEPT = -1024.0
 STORED_MAX = 4095
@@ -134,7 +134,7 @@ class SampleStore:
         for stale in series_dir.glob("*.dcm"):
             stale.unlink()
         paths: list[Path] = []
-        for index, (z, hu) in enumerate(zip(spec.z_positions(), spec.generator(spec))):
+        for index, (z, hu) in enumerate(zip(spec.z_positions(), render_slices(spec))):
             path = series_dir / f"IM{index + 1:04d}.dcm"
             ds = _build_slice(spec, index, float(z), hu)
             tmp = path.with_suffix(".tmp")

@@ -55,6 +55,8 @@ export interface VolumeMetadata {
  */
 export interface Volume {
   data: Float32Array
+  /** ``data`` as IEEE half floats for the R16F GPU texture. */
+  gpuData: Uint16Array
   dims: Vec3
   spacing: Vec3
   valueMin: number

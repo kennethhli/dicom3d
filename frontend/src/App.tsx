@@ -32,6 +32,11 @@ const VIEWS: { id: CameraView; label: string; title: string }[] = [
 
 const UPLOAD_ID = '__upload__'
 
+function readUrlState(): { dataset: string | null; preset: string | null } {
+  const params = new URLSearchParams(window.location.search)
+  return { dataset: params.get('dataset'), preset: params.get('preset') }
+}
+
 export default function App() {
   const [datasets, setDatasets] = useState<DatasetInfo[] | null>(null)
   const [datasetsError, setDatasetsError] = useState<string | null>(null)
@@ -45,6 +50,7 @@ export default function App() {
   const viewportRef = useRef<VolumeViewportHandle>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
+  const urlState = useRef(readUrlState())
   const { state, loadSample, loadFiles } = useVolumeLoader()
   const { volume } = state
 
@@ -68,17 +74,32 @@ export default function App() {
 
   useEffect(() => {
     if (selectedId || !datasets?.length) return
-    setSelectedId(datasets[0].id)
-    loadSample(datasets[0])
+    const initial = datasets.find((d) => d.id === urlState.current.dataset) ?? datasets[0]
+    setSelectedId(initial.id)
+    loadSample(initial)
   }, [datasets, selectedId, loadSample])
 
   const sourceId = state.source?.kind === 'sample' ? state.source.dataset.id : null
   useEffect(() => {
     if (!volume) return
     const init = initialSettings(volume, sourceId)
-    setSettings(init.settings)
-    setPresetId(init.presetId)
+    const fromUrl = CT_PRESETS.find((p) => p.id === urlState.current.preset)
+    urlState.current.preset = null
+    if (fromUrl && volume.metadata.modality === 'CT') {
+      setSettings(applyPreset(fromUrl, init.settings, volume))
+      setPresetId(fromUrl.id)
+    } else {
+      setSettings(init.settings)
+      setPresetId(init.presetId)
+    }
   }, [volume]) // eslint-disable-line react-hooks/exhaustive-deps -- re-initialise only when a new volume arrives
+
+  useEffect(() => {
+    if (!sourceId) return
+    const params = new URLSearchParams({ dataset: sourceId })
+    if (presetId) params.set('preset', presetId)
+    window.history.replaceState(null, '', `?${params}`)
+  }, [sourceId, presetId])
 
   useEffect(() => {
     if (state.warning) toast.warning(state.warning)
@@ -191,9 +212,9 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
+          <div className="order-last flex w-full min-w-0 items-center gap-2 sm:order-none sm:w-auto">
             <Select
-              value={selectedId ?? undefined}
+              value={selectedId ?? ''}
               onValueChange={(id) => {
                 const ds = datasets?.find((d) => d.id === id)
                 if (!ds) return
@@ -202,7 +223,7 @@ export default function App() {
               }}
               disabled={!datasets?.length}
             >
-              <SelectTrigger className="w-full min-w-0 sm:w-72" aria-label="Sample dataset">
+              <SelectTrigger className="min-w-0 flex-1 sm:w-72 sm:flex-none" aria-label="Sample dataset">
                 <SelectValue placeholder={datasets === null ? 'Loading datasets…' : 'Choose a sample series'} />
               </SelectTrigger>
               <SelectContent>

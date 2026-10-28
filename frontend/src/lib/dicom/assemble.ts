@@ -1,7 +1,7 @@
 import type { ParsedSlice, Vec3, Volume } from '@/lib/types'
 
 export const HISTOGRAM_BINS = 256
-/** Upper bound for the GPU texture (float32), ~128 MB. */
+/** Voxel cap: 128 MB of float32 on the CPU plus 64 MB of R16F on the GPU. */
 export const MAX_VOXELS = 32 * 1024 * 1024
 const CT_FLOOR = -1024
 const CT_CEIL = 3071
@@ -78,6 +78,34 @@ export function sortSlices(slices: ParsedSlice[]): SortResult {
   return { ordered: [...slices].sort((a, b) => a.index - b.index), zSpacing: fallbackSpacing, sortedBy: 'file-order' }
 }
 
+/**
+ * Float32 → IEEE half (round-to-nearest). R16F is filterable on every WebGL2
+ * device, unlike R32F which needs OES_texture_float_linear.
+ */
+export function toHalfFloat(src: Float32Array): Uint16Array {
+  const bits = new Uint32Array(src.buffer, src.byteOffset, src.length)
+  const out = new Uint16Array(src.length)
+  for (let i = 0; i < bits.length; i++) {
+    const x = bits[i]
+    const sign = (x >>> 16) & 0x8000
+    const e = ((x >>> 23) & 0xff) - 112
+    let m = x & 0x7fffff
+    if (e <= 0) {
+      if (e < -10) {
+        out[i] = sign
+        continue
+      }
+      m = (m | 0x800000) >>> (1 - e)
+      out[i] = sign | ((m + 0x1000) >>> 13)
+    } else if (e > 30) {
+      out[i] = sign | 0x7c00
+    } else {
+      out[i] = sign | ((e << 10) + ((m + 0x1000) >>> 13))
+    }
+  }
+  return out
+}
+
 /** 2×2 box filter in-plane, used when a series exceeds the texture budget. */
 function downsampleInPlane(values: Float32Array, cols: number, rows: number): Float32Array {
   const w = cols >> 1
@@ -151,6 +179,7 @@ export function assembleVolume(input: ParsedSlice[], skippedUpstream = 0): Volum
 
   return {
     data,
+    gpuData: toHalfFloat(data),
     dims: [cols, rows, depth],
     spacing: [sx, sy, zSpacing],
     valueMin,

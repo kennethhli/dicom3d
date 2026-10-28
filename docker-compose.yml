@@ -1,0 +1,23 @@
+services:
+  api:
+    build: ./backend
+    environment:
+      DICOM3D_CORS_ORIGINS: "http://localhost:8297"
+    volumes:
+      - dicom3d-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build: ./frontend
+    ports:
+      - "8297:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  dicom3d-data:

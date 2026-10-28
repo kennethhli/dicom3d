@@ -8,7 +8,7 @@ const apiTarget = process.env.DICOM3D_API_URL ?? 'http://127.0.0.1:8765'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
   worker: { format: 'es' },
   server: {

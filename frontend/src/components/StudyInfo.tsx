@@ -21,7 +21,7 @@ export function StudyInfo({
 }) {
   const [nx, ny, nz] = volume.dims
   const [sx, sy, sz] = volume.spacing
-  const mb = (volume.data.byteLength / 1024 / 1024).toFixed(1)
+  const mb = (volume.gpuData.byteLength / 1024 / 1024).toFixed(1)
   return (
     <div className="space-y-3">
       <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Volume</h3>
@@ -32,7 +32,7 @@ export function StudyInfo({
         <Row label="Range" value={`${Math.round(volume.valueMin)} … ${Math.round(volume.valueMax)}`} />
         <Row label="Rescale" value={`× ${volume.metadata.rescaleSlope} + ${volume.metadata.rescaleIntercept}`} />
         <Row label="Sorted by" value={volume.metadata.sortedBy} />
-        <Row label="GPU texture" value={`${mb} MB · R32F`} />
+        <Row label="GPU texture" value={`${mb} MB · R16F`} />
         {volume.metadata.skippedSlices > 0 && <Row label="Skipped files" value={String(volume.metadata.skippedSlices)} />}
       </dl>
       {timings && (

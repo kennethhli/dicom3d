@@ -1,7 +1,8 @@
 """Procedural CT phantoms used as built-in sample datasets.
 
-Each generator yields one axial slice at a time as a float32 array of
-Hounsfield Units with shape (rows, cols). Coordinates follow the DICOM
+Each phantom factory returns a function mapping a z position (mm) to a
+noise-free float32 image of Hounsfield Units with shape (rows, cols);
+``render_slices`` turns that into realistic slices. Coordinates follow the DICOM
 patient (LPS) system: +x towards patient left, +y posterior, +z superior.
 """
 
@@ -11,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterator
 
 import numpy as np
+
+SliceFn = Callable[[float], np.ndarray]
 
 HU_AIR = -1000.0
 HU_LUNG = -860.0
@@ -35,7 +38,8 @@ class PhantomSpec:
     slice_thickness_mm: float
     window_center: float
     window_width: float
-    generator: Callable[["PhantomSpec"], Iterator[np.ndarray]] = field(repr=False)
+    noise_hu: float
+    factory: Callable[["PhantomSpec"], SliceFn] = field(repr=False)
 
     def z_positions(self) -> np.ndarray:
         half = (self.slices - 1) / 2.0
@@ -79,7 +83,7 @@ def _segment_mask(
     return dx * dx + dy * dy <= radius * radius
 
 
-def _chest(spec: PhantomSpec) -> Iterator[np.ndarray]:
+def _chest(spec: PhantomSpec) -> SliceFn:
     rng = np.random.default_rng(42)
     x, y = spec.grid()
     zs = spec.z_positions()
@@ -96,7 +100,7 @@ def _chest(spec: PhantomSpec) -> Iterator[np.ndarray]:
             length = rng.uniform(45.0, 120.0)
             vessels.append((hilum, hilum + direction * length, rng.uniform(1.6, 3.4)))
 
-    for z in zs:
+    def slice_at(z: float) -> np.ndarray:
         t = z / z_extent
         img = np.full(x.shape, HU_AIR, dtype=np.float32)
 
@@ -170,37 +174,44 @@ def _chest(spec: PhantomSpec) -> Iterator[np.ndarray]:
                 img[_segment_mask(x, y, (side * 10.0, 84.0), (side * 30.0, 78.0), 4.5)] = HU_CORTICAL * 0.7
         img[_ellipse(x, y, 0.0, 88.0, 8.0, 7.0)] = 20.0
 
-        # Ribs: inclined bands on an ellipse just inside the muscle wall.
+        # Ribs: elliptical cross-sections sweeping down and forward from the spine.
         ra, rb = body_a - 24.0, body_b - 20.0
         r_norm = np.sqrt((x / ra) ** 2 + (y / rb) ** 2)
         theta = np.arctan2(y / rb, x / ra)
-        near_shell = np.abs(r_norm - 1.0) * rb < 4.5
+        radial = (r_norm - 1.0) * rb
+        lateral = np.abs(x) > 26.0 + 30.0 * np.clip(-y / body_b, 0.0, 1.0)
         for i in range(12):
-            z0 = z_extent * 0.85 - i * 22.0
-            z_rib = z0 - 38.0 * (1.0 - np.sin(theta)) / 2.0
-            rib = near_shell & (np.abs(z - z_rib) < 5.0) & ~((np.abs(x) < 24.0) & (y < 0))
-            img[rib] = HU_CORTICAL
-        if -110.0 < z < 110.0:
-            img[(np.abs(x) < 16.0) & (y > -body_b + 8.0) & (y < -body_b + 20.0)] = HU_CORTICAL * 0.6
+            z0 = z_extent * 0.8 - i * 21.0
+            z_rib = z0 - 55.0 * (1.0 - np.sin(theta)) / 2.0
+            d2 = (radial / 4.5) ** 2 + ((z - z_rib) / 3.8) ** 2
+            img[(d2 < 1.0) & lateral] = HU_CORTICAL
+            img[(d2 < 0.35) & lateral] = HU_CANCELLOUS + 150.0
+        if -95.0 < z < 95.0:
+            sternum = (np.abs(x) < 12.0) & (y > -body_b + 9.0) & (y < -body_b + 19.0)
+            img[sternum] = HU_CANCELLOUS + 120.0
+            img[sternum & ~((np.abs(x) < 9.0) & (y > -body_b + 11.5) & (y < -body_b + 16.5))] = HU_CORTICAL * 0.75
 
-        # Scapulae on the posterior chest wall.
-        if z > -40.0:
+        # Scapulae: triangular plates on the posterior chest wall, widest at the top.
+        if -70.0 < z < 120.0:
+            k = float(np.clip((z + 70.0) / 150.0, 0.0, 1.0))
             for side in (-1.0, 1.0):
-                img[_segment_mask(x, y, (side * 60.0, 92.0), (side * 118.0, 70.0), 4.0)] = HU_CORTICAL * 0.85
+                medial_edge = (side * (58.0 + 18.0 * (1.0 - k)), 94.0)
+                lateral_edge = (side * (78.0 + 48.0 * k), 72.0 + 6.0 * (1.0 - k))
+                img[_segment_mask(x, y, medial_edge, lateral_edge, 2.5 + 1.5 * k)] = HU_CORTICAL * 0.85
 
         # Patient table beneath the body.
         table = (y > body_b + 10.0) & (y < body_b + 20.0) & (np.abs(x) < 190.0)
-        img[table] = 250.0
+        img[table] = 120.0
 
-        noise = rng.normal(0.0, 14.0, size=img.shape).astype(np.float32)
-        img += np.where(img > -950, noise, noise * 0.3)
-        yield img
+        return img
+
+    return slice_at
 
 
-def _head(spec: PhantomSpec) -> Iterator[np.ndarray]:
-    rng = np.random.default_rng(7)
+def _head(spec: PhantomSpec) -> SliceFn:
     x, y = spec.grid()
-    for z in spec.z_positions():
+
+    def slice_at(z: float) -> np.ndarray:
         img = np.full(x.shape, HU_AIR, dtype=np.float32)
         c = (0.0, 0.0, 0.0)
         scalp = _ellipsoid_section(x, y, z, c, (78.0, 98.0, 88.0))
@@ -244,8 +255,9 @@ def _head(spec: PhantomSpec) -> Iterator[np.ndarray]:
         if z < -40.0 and (z % 18.0) > 3.0:
             img[_ellipse(x, y, 0.0, 26.0, 10.0, 9.0)] = HU_CORTICAL * 0.8
 
-        img += rng.normal(0.0, 6.0, size=img.shape).astype(np.float32) * (img > -950)
-        yield img
+        return img
+
+    return slice_at
 
 
 CALIBRATION_INSERTS: tuple[tuple[str, float], ...] = (
@@ -260,11 +272,11 @@ CALIBRATION_INSERTS: tuple[tuple[str, float], ...] = (
 )
 
 
-def _calibration(spec: PhantomSpec) -> Iterator[np.ndarray]:
-    rng = np.random.default_rng(3)
+def _calibration(spec: PhantomSpec) -> SliceFn:
     x, y = spec.grid()
     half_len = spec.z_positions()[-1] * 0.85
-    for z in spec.z_positions():
+
+    def slice_at(z: float) -> np.ndarray:
         img = np.full(x.shape, HU_AIR, dtype=np.float32)
         if abs(z) <= half_len:
             img[_ellipse(x, y, 0.0, 0.0, 95.0, 95.0)] = 110.0
@@ -275,7 +287,31 @@ def _calibration(spec: PhantomSpec) -> Iterator[np.ndarray]:
             # Helical wire ramp, useful for checking slice geometry in 3D.
             phase = z / 30.0
             img[_ellipse(x, y, 25.0 * np.cos(phase), 25.0 * np.sin(phase), 2.5, 2.5)] = 1500.0
-            img += rng.normal(0.0, 5.0, size=img.shape).astype(np.float32) * (img > -950)
+        return img
+
+    return slice_at
+
+
+def _smooth(img: np.ndarray) -> np.ndarray:
+    """Separable [1, 2, 1] / 4 blur approximating the scanner's point-spread function."""
+    out = img.copy()
+    out[1:-1, :] = 0.25 * img[:-2, :] + 0.5 * img[1:-1, :] + 0.25 * img[2:, :]
+    tmp = out.copy()
+    out[:, 1:-1] = 0.25 * tmp[:, :-2] + 0.5 * tmp[:, 1:-1] + 0.25 * tmp[:, 2:]
+    return out
+
+
+def render_slices(spec: PhantomSpec, seed: int = 1234) -> Iterator[np.ndarray]:
+    """Yields realistic slices: each slice integrates three sub-slices across its
+    thickness (partial-volume effect), is blurred in-plane, then gets quantum noise."""
+    slice_at = spec.factory(spec)
+    rng = np.random.default_rng(seed)
+    offsets = (-spec.slice_thickness_mm / 3.0, 0.0, spec.slice_thickness_mm / 3.0)
+    for z in spec.z_positions():
+        img = sum(slice_at(float(z + o)) for o in offsets) / len(offsets)
+        img = _smooth(img.astype(np.float32))
+        noise = rng.normal(0.0, spec.noise_hu, size=img.shape).astype(np.float32)
+        img += np.where(img > -950.0, noise, noise * 0.25)
         yield img
 
 
@@ -289,12 +325,13 @@ PHANTOMS: dict[str, PhantomSpec] = {
             body_part="CHEST",
             rows=256,
             cols=256,
-            slices=96,
+            slices=128,
             pixel_spacing_mm=1.4,
-            slice_thickness_mm=3.0,
+            slice_thickness_mm=2.25,
             window_center=40.0,
             window_width=400.0,
-            generator=_chest,
+            noise_hu=12.0,
+            factory=_chest,
         ),
         PhantomSpec(
             id="head-ct",
@@ -308,7 +345,8 @@ PHANTOMS: dict[str, PhantomSpec] = {
             slice_thickness_mm=2.0,
             window_center=40.0,
             window_width=80.0,
-            generator=_head,
+            noise_hu=5.0,
+            factory=_head,
         ),
         PhantomSpec(
             id="hu-calibration",
@@ -322,7 +360,8 @@ PHANTOMS: dict[str, PhantomSpec] = {
             slice_thickness_mm=2.5,
             window_center=0.0,
             window_width=2200.0,
-            generator=_calibration,
+            noise_hu=4.0,
+            factory=_calibration,
         ),
     )
 }
