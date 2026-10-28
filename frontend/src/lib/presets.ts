@@ -83,6 +83,7 @@ export const CT_PRESETS: Preset[] = [
 ]
 
 export const DEFAULT_PRESET_BY_DATASET: Record<string, string> = {
+  'lidc-chest-ct': 'bone',
   'chest-ct': 'bone',
   'head-ct': 'bone',
   'hu-calibration': 'angio',

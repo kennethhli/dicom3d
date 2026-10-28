@@ -12,6 +12,9 @@ from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.uid import CTImageStorage, ExplicitVRLittleEndian, PYDICOM_IMPLEMENTATION_UID, generate_uid
 
 from .phantoms import PHANTOMS, PhantomSpec, render_slices
+from .remote import REMOTE_DATASETS, RemoteSpec, cached_series, download_series
+
+DatasetSpec = PhantomSpec | RemoteSpec
 
 HU_INTERCEPT = -1024.0
 STORED_MAX = 4095
@@ -19,7 +22,7 @@ STORED_MAX = 4095
 
 @dataclass(frozen=True)
 class SeriesFiles:
-    spec: PhantomSpec
+    spec: DatasetSpec
     paths: tuple[Path, ...]
 
 
@@ -109,24 +112,41 @@ def _build_slice(spec: PhantomSpec, index: int, z: float, hu: np.ndarray) -> Dat
 
 
 class SampleStore:
-    """Lazily materialises phantom series as .dcm files under ``root``."""
+    """Lazily materialises sample series as .dcm files under ``root``: synthetic
+    phantoms are generated, real series are downloaded once and cached."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, remote: dict[str, RemoteSpec] | None = None) -> None:
         self.root = root
-        self._locks = {pid: threading.Lock() for pid in PHANTOMS}
+        self._specs: dict[str, DatasetSpec] = {**(REMOTE_DATASETS if remote is None else remote), **PHANTOMS}
+        self._locks = {sid: threading.Lock() for sid in self._specs}
 
-    def specs(self) -> list[PhantomSpec]:
-        return list(PHANTOMS.values())
+    def specs(self) -> list[DatasetSpec]:
+        return list(self._specs.values())
 
-    def get(self, dataset_id: str) -> SeriesFiles:
-        spec = PHANTOMS.get(dataset_id)
+    def spec(self, dataset_id: str) -> DatasetSpec:
+        spec = self._specs.get(dataset_id)
         if spec is None:
             raise KeyError(dataset_id)
+        return spec
+
+    def is_cached(self, dataset_id: str) -> bool:
+        spec = self.spec(dataset_id)
+        series_dir = self.root / spec.id
+        if isinstance(spec, RemoteSpec):
+            return cached_series(series_dir) is not None
+        return len(list(series_dir.glob("*.dcm"))) == spec.slices
+
+    def get(self, dataset_id: str) -> SeriesFiles:
+        """Raises KeyError for unknown ids and DatasetUnavailable if a download fails."""
+        spec = self.spec(dataset_id)
         series_dir = self.root / spec.id
         with self._locks[spec.id]:
-            paths = sorted(series_dir.glob("*.dcm"))
-            if len(paths) != spec.slices:
-                paths = self._generate(spec, series_dir)
+            if isinstance(spec, RemoteSpec):
+                paths = cached_series(series_dir) or download_series(spec, series_dir)
+            else:
+                paths = sorted(series_dir.glob("*.dcm"))
+                if len(paths) != spec.slices:
+                    paths = self._generate(spec, series_dir)
         return SeriesFiles(spec=spec, paths=tuple(paths))
 
     def _generate(self, spec: PhantomSpec, series_dir: Path) -> list[Path]:

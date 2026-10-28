@@ -230,7 +230,15 @@ export default function App() {
                 {datasets?.map((d) => (
                   <SelectItem key={d.id} value={d.id}>
                     <span className="truncate">{d.name}</span>
-                    <span className="ml-auto pl-3 font-mono text-[10px] text-muted-foreground">{d.slices} sl</span>
+                    <span
+                      className={cn(
+                        'ml-auto rounded px-1 py-px text-[9px] font-semibold tracking-wider uppercase',
+                        d.source === 'tcia' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-muted-foreground',
+                      )}
+                    >
+                      {d.source === 'tcia' ? 'Real' : 'Synthetic'}
+                    </span>
+                    <span className="pl-1 font-mono text-[10px] text-muted-foreground">{d.slices} sl</span>
                   </SelectItem>
                 ))}
                 {selectedId === UPLOAD_ID && (
@@ -315,6 +323,9 @@ export default function App() {
                     {volume.metadata.modality} · {volume.dims.join('×')} ·{' '}
                     {settings && `W ${Math.round(settings.windowWidth)} L ${Math.round(settings.windowCenter)}`}
                   </div>
+                  {state.source?.kind === 'sample' && state.source.dataset.source === 'tcia' && (
+                    <div className="text-emerald-300/80">Real patient scan · de-identified · CC BY 3.0</div>
+                  )}
                 </div>
                 <div className="absolute top-3 right-3">
                   <PerfMonitor stats={stats} uploadMs={uploadMs} />
@@ -418,7 +429,12 @@ export default function App() {
                 {volume && settings ? (
                   <>
                     <SliceViewer volume={volume} settings={settings} />
-                    <StudyInfo volume={volume} timings={state.timings} uploadMs={uploadMs} />
+                    <StudyInfo
+                      volume={volume}
+                      timings={state.timings}
+                      uploadMs={uploadMs}
+                      dataset={state.source?.kind === 'sample' ? state.source.dataset : null}
+                    />
                   </>
                 ) : (
                   <>

@@ -1,8 +1,8 @@
 import type { ParsedSlice, Vec3, Volume } from '@/lib/types'
 
 export const HISTOGRAM_BINS = 256
-/** Voxel cap: 128 MB of float32 on the CPU plus 64 MB of R16F on the GPU. */
-export const MAX_VOXELS = 32 * 1024 * 1024
+/** Voxel cap: 160 MB of float32 on the CPU plus 80 MB of R16F on the GPU. Fits a 512²×150 CT. */
+export const MAX_VOXELS = 40 * 1024 * 1024
 const CT_FLOOR = -1024
 const CT_CEIL = 3071
 

@@ -20,7 +20,7 @@ PHI_KEYWORDS = ("PatientBirthDate", "PatientAddress", "InstitutionName", "OtherP
 
 @pytest.fixture(scope="session")
 def client(tmp_path_factory: pytest.TempPathFactory) -> TestClient:
-    main.store = SampleStore(Path(tmp_path_factory.mktemp("data")))
+    main.store = SampleStore(Path(tmp_path_factory.mktemp("data")), remote={})
     main._deidentified_series.cache_clear()
     return TestClient(main.app)
 
@@ -112,3 +112,57 @@ def test_deid_is_deterministic() -> None:
     b = dcmread(BytesIO(deidentify_bytes(buf.getvalue()).data))
     assert a.SOPInstanceUID == b.SOPInstanceUID != ds.SOPInstanceUID
     assert a.PatientID == b.PatientID
+
+
+def _remote_spec(url: str):
+    from app.remote import RemoteSpec
+
+    return RemoteSpec(
+        id="remote-test",
+        name="Remote test",
+        description="",
+        body_part="PHANTOM",
+        rows=192,
+        cols=192,
+        slices=3,
+        pixel_spacing_mm=1.1,
+        slice_thickness_mm=2.5,
+        window_center=0,
+        window_width=400,
+        url=url,
+        attribution="test",
+        license_url="https://example.org",
+    )
+
+
+def test_remote_series_downloads_once_and_is_deidentified(client: TestClient, tmp_path: Path) -> None:
+    import zipfile
+
+    src = main.store.get("hu-calibration").paths[:3]
+    archive = tmp_path / "series.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        for i, p in enumerate(src):
+            zf.write(p, f"nested/dir/{i}.dcm")
+        zf.writestr("LICENSE.txt", "cc-by")
+
+    store = SampleStore(tmp_path / "store", remote={"remote-test": _remote_spec(archive.as_uri())})
+    first = store.get("remote-test")
+    assert len(first.paths) == 3 and store.is_cached("remote-test")
+    archive.unlink()  # a second call must be served from the cache
+    assert store.get("remote-test").paths == first.paths
+
+    ds = dcmread(BytesIO(deidentify_bytes(first.paths[0].read_bytes()).data))
+    assert "PatientBirthDate" not in ds
+
+
+def test_remote_download_failure_is_503(tmp_path: Path) -> None:
+    previous = main.store
+    main.store = SampleStore(tmp_path, remote={"remote-test": _remote_spec((tmp_path / "missing.zip").as_uri())})
+    try:
+        res = TestClient(main.app).get("/api/datasets/remote-test/bundle")
+        assert res.status_code == 503
+        listing = {d["id"]: d for d in TestClient(main.app).get("/api/datasets").json()}
+        assert listing["remote-test"]["cached"] is False
+        assert listing["remote-test"]["source"] == "tcia"
+    finally:
+        main.store = previous

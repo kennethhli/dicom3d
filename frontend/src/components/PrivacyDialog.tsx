@@ -73,7 +73,9 @@ export function PrivacyDialog({ source, deid }: { source: VolumeSource | null; d
           <DialogDescription>
             {local
               ? 'The API was unreachable, so these files were decoded entirely in your browser and never uploaded. Their headers were not scrubbed.'
-              : datasetId
+              : source.kind === 'sample' && source.dataset.source === 'tcia'
+                ? 'This real scan was already anonymised by The Cancer Imaging Archive and is scrubbed again by the API before it is sent. Only tag names are reported. Geometry and pixel data are kept intact.'
+                : datasetId
                 ? 'Each sample slice is scrubbed on the server before it is sent. The sample PHI is synthetic, so original values are shown for illustration. Geometry and pixel data are kept intact.'
                 : 'Your files were scrubbed by the API before parsing. Original values are never sent back to the browser.'}
           </DialogDescription>

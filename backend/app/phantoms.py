@@ -40,6 +40,7 @@ class PhantomSpec:
     window_width: float
     noise_hu: float
     factory: Callable[["PhantomSpec"], SliceFn] = field(repr=False)
+    source: str = "synthetic"
 
     def z_positions(self) -> np.ndarray:
         half = (self.slices - 1) / 2.0

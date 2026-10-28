@@ -23,6 +23,7 @@ from pydicom import dcmread
 from .bundle import MEDIA_TYPE, encode_bundle
 from .datasets import SampleStore
 from .deid import NotDicomError, TagChange, deidentify_bytes
+from .remote import DatasetUnavailable
 
 DATA_DIR = Path(os.environ.get("DICOM3D_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 MAX_UPLOAD_FILES = int(os.environ.get("DICOM3D_MAX_UPLOAD_FILES", "1500"))
@@ -76,6 +77,10 @@ class DatasetInfo(BaseModel):
     slice_thickness_mm: float
     window_center: float
     window_width: float
+    source: str
+    attribution: str | None = None
+    license_url: str | None = None
+    cached: bool
 
 
 class TagChangeOut(BaseModel):
@@ -98,7 +103,7 @@ class UploadSummary(BaseModel):
     changes: list[dict[str, str | int]]
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=4)
 def _deidentified_series(dataset_id: str) -> tuple[bytes, int]:
     series = store.get(dataset_id)
     files = [deidentify_bytes(p.read_bytes()).data for p in series.paths]
@@ -110,6 +115,8 @@ def _spec_or_404(dataset_id: str):
         return store.get(dataset_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown dataset '{dataset_id}'") from None
+    except DatasetUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 def _summarise(changes: list[TagChange]) -> list[dict[str, str | int]]:
@@ -141,6 +148,10 @@ def list_datasets() -> list[DatasetInfo]:
             slice_thickness_mm=s.slice_thickness_mm,
             window_center=s.window_center,
             window_width=s.window_width,
+            source=getattr(s, "source", "synthetic"),
+            attribution=getattr(s, "attribution", None),
+            license_url=getattr(s, "license_url", None),
+            cached=store.is_cached(s.id),
         )
         for s in store.specs()
     ]
@@ -149,7 +160,7 @@ def list_datasets() -> list[DatasetInfo]:
 @app.get("/api/datasets/{dataset_id}/bundle")
 async def dataset_bundle(dataset_id: str) -> Response:
     """All slices of a series, de-identified, packed into one binary bundle."""
-    _spec_or_404(dataset_id)
+    await run_in_threadpool(_spec_or_404, dataset_id)
     payload, count = await run_in_threadpool(_deidentified_series, dataset_id)
     return Response(
         content=payload,
@@ -160,7 +171,7 @@ async def dataset_bundle(dataset_id: str) -> Response:
 
 @app.get("/api/datasets/{dataset_id}/slices/{index}")
 async def dataset_slice(dataset_id: str, index: int) -> Response:
-    series = _spec_or_404(dataset_id)
+    series = await run_in_threadpool(_spec_or_404, dataset_id)
     if not 0 <= index < len(series.paths):
         raise HTTPException(status_code=404, detail="Slice index out of range")
     result = await run_in_threadpool(deidentify_bytes, series.paths[index].read_bytes())
@@ -173,13 +184,14 @@ async def dataset_slice(dataset_id: str, index: int) -> Response:
 
 @app.get("/api/datasets/{dataset_id}/deid-report", response_model=HeaderComparison)
 async def deid_report(dataset_id: str, index: Annotated[int, Query(ge=0)] = 0) -> HeaderComparison:
-    """What the de-identifier changed on one slice. Original values are shown because the
-    sample data is synthetic; uploads never echo original values back."""
-    series = _spec_or_404(dataset_id)
+    """What the de-identifier changed on one slice. Original values are only echoed for
+    synthetic phantoms; real series and uploads report tag names only."""
+    series = await run_in_threadpool(_spec_or_404, dataset_id)
     if index >= len(series.paths):
         raise HTTPException(status_code=404, detail="Slice index out of range")
     raw = series.paths[index].read_bytes()
-    result = await run_in_threadpool(deidentify_bytes, raw, "dicom3d", True)
+    synthetic = getattr(series.spec, "source", "synthetic") == "synthetic"
+    result = await run_in_threadpool(deidentify_bytes, raw, "dicom3d", synthetic)
     ds = dcmread(BytesIO(result.data))
     preserved = {
         kw: str(ds.data_element(kw).value)  # type: ignore[union-attr]

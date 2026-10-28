@@ -13,6 +13,10 @@ export interface DatasetInfo {
   slice_thickness_mm: number
   window_center: number
   window_width: number
+  source: 'synthetic' | 'tcia'
+  attribution: string | null
+  license_url: string | null
+  cached: boolean
 }
 
 /** One decoded DICOM slice, values already rescaled (HU for CT). */

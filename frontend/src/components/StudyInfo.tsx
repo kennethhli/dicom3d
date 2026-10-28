@@ -1,5 +1,5 @@
 import type { LoadTimings } from '@/hooks/useVolumeLoader'
-import type { Volume } from '@/lib/types'
+import type { DatasetInfo, Volume } from '@/lib/types'
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -14,10 +14,12 @@ export function StudyInfo({
   volume,
   timings,
   uploadMs,
+  dataset,
 }: {
   volume: Volume
   timings: LoadTimings | null
   uploadMs: number | null
+  dataset: DatasetInfo | null
 }) {
   const [nx, ny, nz] = volume.dims
   const [sx, sy, sz] = volume.spacing
@@ -45,6 +47,27 @@ export function StudyInfo({
             {uploadMs !== null && <Row label="GPU upload" value={`${uploadMs.toFixed(0)} ms`} />}
           </dl>
         </>
+      )}
+      {dataset?.attribution && (
+        <p className="border-t pt-3 text-[11px] leading-relaxed text-muted-foreground">
+          {dataset.attribution.replace(/https?:\/\/\S+$/, '').trim()}{' '}
+          <a
+            className="text-primary underline-offset-2 hover:underline"
+            href={dataset.attribution.match(/https?:\/\/\S+$/)?.[0] ?? dataset.license_url ?? '#'}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Source
+          </a>
+          {dataset.license_url && (
+            <>
+              {' · '}
+              <a className="text-primary underline-offset-2 hover:underline" href={dataset.license_url} target="_blank" rel="noreferrer">
+                CC BY 3.0
+              </a>
+            </>
+          )}
+        </p>
       )}
     </div>
   )
