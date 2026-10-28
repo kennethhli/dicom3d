@@ -1,0 +1,9 @@
+[project]
+name = "dicom3d-api"
+version = "1.0.0"
+description = "FastAPI service that de-identifies and serves DICOM series for DICOM3D"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
