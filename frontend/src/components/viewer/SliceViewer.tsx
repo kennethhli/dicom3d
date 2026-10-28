@@ -100,8 +100,6 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
     setDraft(null)
   }, [geo])
 
-  useEffect(() => setMeasurements([]), [volume])
-
   const range = volume.valueMax - volume.valueMin
   const lo = (settings.windowCenter - settings.windowWidth / 2 - volume.valueMin) / range
   const hi = (settings.windowCenter + settings.windowWidth / 2 - volume.valueMin) / range

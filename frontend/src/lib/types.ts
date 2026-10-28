@@ -86,14 +86,18 @@ export interface ViewerSettings {
   clipZ: [number, number]
   quality: 'performance' | 'balanced' | 'high'
   shading: boolean
+  /** Render on demand with dynamic resolution; off renders every frame at full quality. */
+  adaptive: boolean
 }
 
 export interface PerfStats {
+  mode: 'idle' | 'interactive' | 'continuous'
   fps: number
-  frameMs: number
+  frameMs: number | null
   cpuMs: number
   gpuMs: number | null
   drawingBuffer: [number, number]
+  resolutionScale: number
   steps: number
 }
 

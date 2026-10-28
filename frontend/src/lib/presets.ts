@@ -39,11 +39,11 @@ export const CT_PRESETS: Preset[] = [
   {
     id: 'lung',
     label: 'Lung',
-    hint: 'W 1500 / L −600 · airways, parenchyma',
-    windowCenter: -600,
-    windowWidth: 1500,
-    threshold: [-960, -250],
-    opacity: 0.22,
+    hint: 'W 1100 / L −500 · airways, parenchyma',
+    windowCenter: -500,
+    windowWidth: 1100,
+    threshold: [-910, -250],
+    opacity: 0.25,
     mode: 'dvr',
     colormap: 'cool',
   },
@@ -126,6 +126,7 @@ export function autoSettings(volume: Volume): ViewerSettings {
     clipZ: FULL_CLIP,
     quality: 'balanced',
     shading: true,
+    adaptive: true,
   }
 }
 

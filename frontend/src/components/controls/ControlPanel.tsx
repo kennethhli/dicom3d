@@ -216,6 +216,19 @@ export function ControlPanel({ volume, settings, presetId, onChange, onPreset, o
           </Label>
           <Switch id="shading" checked={settings.shading} onCheckedChange={(shading) => onChange({ shading })} />
         </div>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="adaptive" className="text-xs">
+              Adaptive resolution
+            </Label>
+            <Switch id="adaptive" checked={settings.adaptive} onCheckedChange={(adaptive) => onChange({ adaptive })} />
+          </div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            {settings.adaptive
+              ? 'Renders only on change, at a lower resolution while you interact, then refines.'
+              : 'Benchmark mode: every frame is rendered at full quality.'}
+          </p>
+        </div>
       </Section>
 
       <Section

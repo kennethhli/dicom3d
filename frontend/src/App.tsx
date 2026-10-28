@@ -17,7 +17,7 @@ import { useVolumeLoader } from '@/hooks/useVolumeLoader'
 import { fetchDatasets } from '@/lib/api'
 import { filesFromDataTransfer, filterDicomCandidates } from '@/lib/files'
 import { applyPreset, CT_PRESETS, initialSettings } from '@/lib/presets'
-import type { DatasetInfo, PerfStats, ViewerSettings } from '@/lib/types'
+import type { DatasetInfo, PerfStats, ViewerSettings, Volume } from '@/lib/types'
 import type { CameraView } from '@/render/VolumeRenderer'
 import { cn } from '@/lib/utils'
 
@@ -35,6 +35,18 @@ const UPLOAD_ID = '__upload__'
 function readUrlState(): { dataset: string | null; preset: string | null } {
   const params = new URLSearchParams(window.location.search)
   return { dataset: params.get('dataset'), preset: params.get('preset') }
+}
+
+const volumeKeys = new WeakMap<Volume, number>()
+let nextVolumeKey = 1
+/** Stable per-volume key so per-volume UI state (e.g. measurements) resets on reload. */
+function volumeKey(volume: Volume): number {
+  let key = volumeKeys.get(volume)
+  if (key === undefined) {
+    key = nextVolumeKey++
+    volumeKeys.set(volume, key)
+  }
+  return key
 }
 
 export default function App() {
@@ -428,7 +440,7 @@ export default function App() {
               <div className="space-y-6 p-4">
                 {volume && settings ? (
                   <>
-                    <SliceViewer volume={volume} settings={settings} />
+                    <SliceViewer key={volumeKey(volume)} volume={volume} settings={settings} />
                     <StudyInfo
                       volume={volume}
                       timings={state.timings}
