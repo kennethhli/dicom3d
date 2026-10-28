@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { VolumeRenderer, type CameraView } from '@/render/VolumeRenderer'
 import type { PerfStats, ViewerSettings, Volume } from '@/lib/types'
 
@@ -23,7 +23,9 @@ export const VolumeViewport = forwardRef<VolumeViewportHandle, Props>(function V
   const rendererRef = useRef<VolumeRenderer | null>(null)
   const [webglError, setWebglError] = useState<string | null>(null)
   const callbacks = useRef({ onStats, onUploaded, onError })
-  callbacks.current = { onStats, onUploaded, onError }
+  useLayoutEffect(() => {
+    callbacks.current = { onStats, onUploaded, onError }
+  })
 
   useEffect(() => {
     const el = containerRef.current
