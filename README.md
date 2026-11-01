@@ -1,5 +1,7 @@
 # DICOM3D
 
+**Live demo:** https://dicom3d.onrender.com (the free server may take about a minute to wake up)
+
 A browser-based 3D volumetric renderer and slice viewer for CT/MRI series in DICOM format.
 
 DICOM3D takes a stack of 2D DICOM slices and de-identifies them on a FastAPI backend. Web Workers decode the slices off the main thread. The slices are then rebuilt into one 3D texture and rendered with a custom GPU ray-marching shader in Three.js. Clinical controls run in real time: window/level, density thresholds, clipping planes, and render modes.
