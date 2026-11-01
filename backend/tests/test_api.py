@@ -166,3 +166,13 @@ def test_remote_download_failure_is_503(tmp_path: Path) -> None:
         assert listing["remote-test"]["source"] == "tcia"
     finally:
         main.store = previous
+
+
+def test_bundle_is_served_precompressed(client: TestClient) -> None:
+    res = client.get("/api/datasets/hu-calibration/bundle", headers={"Accept-Encoding": "gzip"})
+    assert res.status_code == 200
+    assert res.headers["content-encoding"] == "gzip"
+    assert res.content[:4] == b"D3DB"  # httpx decodes it; a double-gzip would not start with the magic
+    plain = client.get("/api/datasets/hu-calibration/bundle", headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in plain.headers
+    assert plain.content == res.content

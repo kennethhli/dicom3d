@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: dicom3d
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # The free plan has 0.1 CPU and 512 MB; bundles are prebuilt into the image.
+      - key: DICOM3D_BUNDLE_CACHE
+        value: "2"
+      - key: DICOM3D_MAX_UPLOAD_BYTES
+        value: "134217728"

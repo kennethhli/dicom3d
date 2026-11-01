@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import json
 import os
+import struct
 import threading
 from contextlib import asynccontextmanager
 from collections import Counter
@@ -12,11 +14,12 @@ from io import BytesIO
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pydicom import dcmread
 
@@ -29,14 +32,23 @@ DATA_DIR = Path(os.environ.get("DICOM3D_DATA_DIR", Path(__file__).resolve().pare
 MAX_UPLOAD_FILES = int(os.environ.get("DICOM3D_MAX_UPLOAD_FILES", "1500"))
 MAX_UPLOAD_BYTES = int(os.environ.get("DICOM3D_MAX_UPLOAD_BYTES", str(768 * 1024 * 1024)))
 CORS_ORIGINS = [o for o in os.environ.get("DICOM3D_CORS_ORIGINS", "*").split(",") if o]
+BUNDLE_CACHE_SIZE = int(os.environ.get("DICOM3D_BUNDLE_CACHE", "4"))
+GZIP_LEVEL = int(os.environ.get("DICOM3D_GZIP_LEVEL", "6"))
+STATIC_DIR = os.environ.get("DICOM3D_STATIC_DIR")
 
 store = SampleStore(DATA_DIR / "samples")
+#: De-identified bundles baked in at image build time by ``app.prebuild``.
+PREBUILT_DIR = DATA_DIR / "bundles"
 
 
 def _warm_samples() -> None:
-    for spec in store.specs():
+    for i, spec in enumerate(store.specs()):
         try:
-            store.get(spec.id)
+            if i == 0:
+                # The frontend opens the first dataset, so have its bundle ready before anyone asks.
+                _deidentified_series(spec.id)
+            else:
+                store.get(spec.id)
         except Exception:  # warming is best-effort; requests will retry generation
             pass
 
@@ -103,11 +115,24 @@ class UploadSummary(BaseModel):
     changes: list[dict[str, str | int]]
 
 
-@lru_cache(maxsize=4)
-def _deidentified_series(dataset_id: str) -> tuple[bytes, int]:
+def build_bundle(dataset_id: str) -> tuple[bytes, bytes]:
+    """De-identified bundle and its gzip encoding."""
     series = store.get(dataset_id)
-    files = [deidentify_bytes(p.read_bytes()).data for p in series.paths]
-    return encode_bundle(files), len(files)
+    payload = encode_bundle([deidentify_bytes(p.read_bytes()).data for p in series.paths])
+    return payload, gzip.compress(payload, compresslevel=GZIP_LEVEL)
+
+
+@lru_cache(maxsize=BUNDLE_CACHE_SIZE)
+def _deidentified_series(dataset_id: str) -> tuple[bytes, bytes, int]:
+    """Raw and gzip-compressed bundle; compressing once avoids re-gzipping ~70 MB per request."""
+    raw_path = PREBUILT_DIR / f"{dataset_id}.d3db"
+    gz_path = raw_path.with_suffix(".d3db.gz")
+    if raw_path.is_file() and gz_path.is_file():
+        payload, compressed = raw_path.read_bytes(), gz_path.read_bytes()
+    else:
+        payload, compressed = build_bundle(dataset_id)
+    (count,) = struct.unpack_from("<I", payload, 8)
+    return payload, compressed, count
 
 
 def _spec_or_404(dataset_id: str):
@@ -158,15 +183,14 @@ def list_datasets() -> list[DatasetInfo]:
 
 
 @app.get("/api/datasets/{dataset_id}/bundle")
-async def dataset_bundle(dataset_id: str) -> Response:
+async def dataset_bundle(dataset_id: str, request: Request) -> Response:
     """All slices of a series, de-identified, packed into one binary bundle."""
     await run_in_threadpool(_spec_or_404, dataset_id)
-    payload, count = await run_in_threadpool(_deidentified_series, dataset_id)
-    return Response(
-        content=payload,
-        media_type=MEDIA_TYPE,
-        headers={"X-Slice-Count": str(count), "Cache-Control": "public, max-age=3600"},
-    )
+    payload, compressed, count = await run_in_threadpool(_deidentified_series, dataset_id)
+    headers = {"X-Slice-Count": str(count), "Cache-Control": "public, max-age=3600", "Vary": "Accept-Encoding"}
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(content=compressed, media_type=MEDIA_TYPE, headers={**headers, "Content-Encoding": "gzip"})
+    return Response(content=payload, media_type=MEDIA_TYPE, headers=headers)
 
 
 @app.get("/api/datasets/{dataset_id}/slices/{index}")
@@ -243,3 +267,8 @@ async def deidentify_upload(files: Annotated[list[UploadFile], File(description=
         media_type=MEDIA_TYPE,
         headers={"X-Slice-Count": str(len(accepted)), "X-Deid-Report": report},
     )
+
+
+if STATIC_DIR and Path(STATIC_DIR).is_dir():
+    # Single-container deployments serve the built frontend from the same origin as the API.
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="web")
