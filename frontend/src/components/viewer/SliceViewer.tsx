@@ -13,6 +13,7 @@ import {
   type RoiStats,
   type SliceAxis,
 } from '@/lib/measure'
+import { fromView, toView, withSlice, type Voxel } from '@/lib/mpr'
 import type { ViewerSettings, Volume } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -83,7 +84,11 @@ const AXIS_SHORT: Record<SliceAxis, string> = { axial: 'Ax', coronal: 'Cor', sag
 export function SliceViewer({ volume, settings }: { volume: Volume; settings: ViewerSettings }) {
   const [axis, setAxis] = useState<SliceAxis>('axial')
   const geo = useMemo(() => geometry(volume, axis), [volume, axis])
-  const [slice, setSlice] = useState(() => Math.floor(geo.depth / 2))
+  const dims = volume.dims as Voxel
+  /** Shared 3D cursor: every view shows the slice through it, with a crosshair on it. */
+  const [cursor, setCursor] = useState<Voxel>(() => [dims[0] >> 1, dims[1] >> 1, dims[2] >> 1])
+  const view = toView(axis, cursor, dims)
+  const setSlice = (v: number) => setCursor((c) => withSlice(axis, c, v, dims))
   const [hover, setHover] = useState<{ x: number; y: number; hu: number } | null>(null)
   const [tool, setTool] = useState<Tool>('probe')
   const [measurements, setMeasurements] = useState<Measurement[]>([])
@@ -91,19 +96,18 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const nextId = useRef(1)
-  const pendingSlice = useRef<number | null>(null)
+  const probing = useRef(false)
 
-  useEffect(() => {
-    setSlice(pendingSlice.current ?? Math.floor(geo.depth / 2))
-    pendingSlice.current = null
+  const changeAxis = (next: SliceAxis) => {
+    setAxis(next)
     setHover(null)
     setDraft(null)
-  }, [geo])
+  }
 
   const range = volume.valueMax - volume.valueMin
   const lo = (settings.windowCenter - settings.windowWidth / 2 - volume.valueMin) / range
   const hi = (settings.windowCenter + settings.windowWidth / 2 - volume.valueMin) / range
-  const s = Math.min(slice, geo.depth - 1)
+  const s = view.slice
   const huAt = useCallback(
     (x: number, y: number) => volume.valueMin + volume.data[geo.voxel(x, y, s)] * range,
     [volume, geo, s, range],
@@ -138,26 +142,34 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const dir = Math.sign(e.deltaY)
-      setSlice((v) => Math.max(0, Math.min(geo.depth - 1, v + dir)))
+      setCursor((c) => withSlice(axis, c, toView(axis, c, dims).slice + dir, dims))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [geo.depth])
+  }, [axis, dims])
 
   const toImage = (e: PointerEvent<HTMLElement>): Point => {
     const rect = e.currentTarget.getBoundingClientRect()
     return [((e.clientX - rect.left) / rect.width) * geo.width, ((e.clientY - rect.top) / rect.height) * geo.height]
   }
 
+  const moveCursor = (p: Point) => setCursor(fromView(axis, p[0], p[1], s, dims))
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (tool === 'probe' || e.button !== 0) return
+    if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const p = toImage(e)
-    setDraft({ a: p, b: p })
+    if (tool === 'probe') {
+      probing.current = true
+      moveCursor(p)
+    } else {
+      setDraft({ a: p, b: p })
+    }
   }
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const p = toImage(e)
+    if (probing.current) moveCursor(p)
     if (draft) setDraft({ a: draft.a, b: p })
     const x = Math.floor(p[0])
     const y = Math.floor(p[1])
@@ -166,6 +178,7 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
   }
 
   const onPointerUp = () => {
+    probing.current = false
     if (!draft || tool === 'probe') return
     const moved = Math.hypot(draft.b[0] - draft.a[0], draft.b[1] - draft.a[1])
     if (moved > 2) {
@@ -190,6 +203,7 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
     return map
   }, [measurements, volume, geo, axis, range])
 
+  const cursorHu = volume.valueMin + volume.data[cursor[2] * dims[0] * dims[1] + cursor[1] * dims[0] + cursor[0]] * range
   const clip = clipRect(axis, settings)
   const clipped = clip.x[0] > 0 || clip.x[1] < 1 || clip.y[0] > 0 || clip.y[1] < 1
   const t = (s + 0.5) / geo.depth
@@ -244,19 +258,15 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
       : [Math.max(m.a[0], m.b[0]), Math.min(m.a[1], m.b[1])]
 
   const jumpTo = (m: Measurement) => {
-    if (m.axis === axis) {
-      setSlice(m.slice)
-    } else {
-      pendingSlice.current = m.slice
-      setAxis(m.axis)
-    }
+    setCursor((c) => withSlice(m.axis, c, m.slice, dims))
+    changeAxis(m.axis)
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">2D Slice (MPR)</h3>
-        <ToggleGroup type="single" size="sm" variant="outline" value={axis} onValueChange={(v) => v && setAxis(v as SliceAxis)}>
+        <ToggleGroup type="single" size="sm" variant="outline" value={axis} onValueChange={(v) => v && changeAxis(v as SliceAxis)}>
           <ToggleGroupItem value="axial" className="px-2 text-xs">Axial</ToggleGroupItem>
           <ToggleGroupItem value="coronal" className="px-2 text-xs">Coronal</ToggleGroupItem>
           <ToggleGroupItem value="sagittal" className="px-2 text-xs">Sagittal</ToggleGroupItem>
@@ -267,7 +277,7 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
         <ToggleGroup type="single" size="sm" variant="outline" value={tool} onValueChange={(v) => v && setTool(v as Tool)}>
           {(
             [
-              { id: 'probe', icon: Crosshair, label: 'Probe', tip: `Hover to read ${unit || 'values'}` },
+              { id: 'probe', icon: Crosshair, label: 'Probe', tip: `Click or drag to move the linked crosshair; hover to read ${unit || 'values'}` },
               { id: 'ruler', icon: Ruler, label: 'Ruler', tip: 'Drag to measure distance in mm' },
               { id: 'roi', icon: Circle, label: 'ROI', tip: 'Drag an ellipse for mean, SD, min/max and area' },
             ] as const
@@ -297,7 +307,10 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerCancel={() => setDraft(null)}
+          onPointerCancel={() => {
+            probing.current = false
+            setDraft(null)
+          }}
           onPointerLeave={() => !draft && setHover(null)}
         >
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-label={`${axis} slice ${s + 1} of ${geo.depth}`} />
@@ -320,6 +333,10 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
                 vectorEffect="non-scaling-stroke"
               />
             )}
+            <g stroke="rgb(52 211 153 / 0.55)" strokeWidth={1} vectorEffect="non-scaling-stroke" strokeDasharray="6 4">
+              <line x1={view.x + 0.5} y1={0} x2={view.x + 0.5} y2={geo.height} vectorEffect="non-scaling-stroke" />
+              <line x1={0} y1={view.y + 0.5} x2={geo.width} y2={view.y + 0.5} vectorEffect="non-scaling-stroke" />
+            </g>
             {visible.map((m) => renderShape(m, `m${m.id}`))}
             {draft && tool !== 'probe' && renderShape({ kind: tool, ...draft }, 'draft', true)}
           </svg>
@@ -359,7 +376,12 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
               </div>
             </>
           ) : (
-            <div>scroll to page slices</div>
+            <>
+              <div className="text-emerald-300/90">
+                {cursorHu.toFixed(0)} {unit} at crosshair
+              </div>
+              <div>scroll to page slices</div>
+            </>
           )}
         </div>
         {outsideClip && (
@@ -371,7 +393,7 @@ export function SliceViewer({ volume, settings }: { volume: Volume; settings: Vi
 
       <div className="flex items-center gap-3">
         <Slider value={[s]} min={0} max={geo.depth - 1} step={1} onValueChange={([v]) => setSlice(v)} aria-label="Slice index" />
-        <span className="w-24 shrink-0 text-right font-mono text-[11px] text-muted-foreground tabular-nums">
+        <span className="w-28 shrink-0 text-right font-mono text-[11px] text-muted-foreground tabular-nums">
           {s + 1}/{geo.depth} · {positionMm.toFixed(0)}mm
         </span>
       </div>

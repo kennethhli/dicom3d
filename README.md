@@ -25,12 +25,12 @@ DICOM3D takes a stack of 2D DICOM slices and de-identifies them on a FastAPI bac
   - Clip-box intersection: cutting into the volume also makes rendering faster.
   - **Adaptive rendering for weak GPUs.** Frames are drawn only when something changes. While you drag the camera or a slider, the viewer renders with fewer ray steps at a reduced resolution, which a controller tunes to a ~19 ms frame budget (down to 30%). About 220 ms after the last change, it draws one full-resolution, full-step frame and then goes idle. Turn off *Adaptive resolution* to render every frame at full quality for benchmarking.
 - **Clinical controls.**
-  - Presets: Bone, Soft Tissue, Lung, Angio, Brain, MIP, Mediastinum. Keys `1`–`7` select them.
+  - Presets: Bone, Soft Tissue, Lung, Angio, Brain, MIP. Keys `1`–`6` select them.
   - Window center/width with a live histogram, HU threshold range, opacity, brightness, and colormaps.
   - X/Y/Z clipping range sliders.
   - Camera views A/P/L/R/S/I, which are also keyboard shortcuts.
   - PNG export.
-- **MPR slice viewer.** Axial, coronal, and sagittal 2D views in radiological orientation. Hovering shows the HU value under the cursor, the mouse wheel pages through slices, and the current clip box is drawn on the slice.
+- **MPR slice viewer.** Axial, coronal, and sagittal 2D views in radiological orientation. The views are linked by a shared 3D crosshair: click or drag in Probe mode to move it, and switching views jumps to the slice through that same point. Hovering shows the HU value under the cursor, the mouse wheel pages through slices, and the current clip box is drawn on the slice.
 - **Measurement tools.**
   - **Ruler:** distance in mm, using the pixel spacing of each view, so it stays correct on anisotropic coronal and sagittal planes.
   - **Elliptical ROI:** mean, standard deviation, min/max HU, and area.
